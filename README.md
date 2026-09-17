@@ -481,7 +481,7 @@ All fine-tuning was performed on **AIKosh** — India's national AI compute plat
 
 | Metric | What it measures | Target |
 |--------|-----------------|--------|
-| ROUGE-L | Overlap with reference summaries | > 0.45 |
+| ROUGE-L | Overlap with reference summaries | >= 0.82 |
 | BERTScore | Semantic similarity | > 0.88 |
 | Field extraction accuracy | Structured field correctness | > 85% |
 | Date accuracy | Incident date normalization | > 90% |

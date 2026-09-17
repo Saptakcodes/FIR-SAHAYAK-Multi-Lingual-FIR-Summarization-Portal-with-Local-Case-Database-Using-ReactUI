@@ -29,7 +29,7 @@
 - [System Flowchart](#-system-flowchart)
 - [Application Walkthrough](#-application-walkthrough)
 - [Technology Stack](#-technology-stack)
-- [Frontend — React + Bun](#-frontend--react--bun)
+- [Frontend — React + Bun + Vite](#-frontend--react--bun--vite)
 - [Backend — FastAPI + SQLite](#-backend--fastapi--sqlite)
 - [Model Fine-Tuning — Qwen2.5-1.5B-Instruct (QLoRA)](#-model-fine-tuning--qwen2515b-instruct-qlora)
 - [End-to-End Pipeline](#-end-to-end-pipeline)
@@ -105,7 +105,7 @@ Existing digital tools are either **cloud-dependent** (violating data sovereignt
 | 🔎 **Conversational Search** | Query the database in plain English — *"show FIRs between 1 Jan 2025 and 15 June 2025"* or *"search complainant Amit"*. |
 | 📋 **Advanced Filtering** | Filter by FIR number, complainant/accused name, date range, police station, district, and legal sections. |
 | 🗄️ **Local SQLite Database** | All case data stored locally — no cloud, no external DB server. |
-| 💻 **React + Bun Frontend** | Fast, modern SPA built with React and served via Bun runtime. |
+| 💻 **React + Bun Frontend** | Fast, modern SPA built with React, Vite, and served via Bun runtime. |
 | 🔒 **Offline-First** | Fully functional without internet — ideal for secure law-enforcement environments. |
 
 ---
@@ -122,12 +122,12 @@ The architecture is organized into **four horizontal layers**, with a dedicated 
 - **Data cleaning utilities** — `pd.to_datetime(errors='coerce')`, normalization of `"Not explicitly stated"` → `NaT`
 
 ### 2. AI / ML Layer
-- **Tesseract OCR** — extracts raw text from FIR documents
+- **Tesseract OCR** — extracts raw text from FIR documents (local binary in `backend/tesseract_ocr/`)
 - **Qwen2.5-1.5B-Instruct (fine-tuned)** — generates structured summaries
 - **Translation module** — 12 Indian languages (primary: `deep_translator`, offline fallback: IndicTrans2)
 
 ### 3. Application Logic Layer (FastAPI)
-- `search.py` — advanced search engine
+- `services/search.py` — advanced search engine
 - `normalise_date()` — robust multi-format date parsing
 - `init_db()` / `save_fir_record()` — CRUD operations
 - `parse_natural_query()` — NLP query parser (regex + date logic + feature extraction)
@@ -270,7 +270,7 @@ The most powerful interface. Officers interact with the case database using **na
 
 | Layer | Technology |
 |-------|------------|
-| **Frontend** | React (TypeScript), Bun (runtime + bundler + package manager) |
+| **Frontend** | React (TypeScript), Vite, TanStack Router, Bun (runtime + package manager) |
 | **Backend** | FastAPI (Python 3.9+) |
 | **OCR** | Tesseract OCR (English, Hindi, Bengali language packs) |
 | **Summarization** | Qwen2.5-1.5B-Instruct (fine-tuned via QLoRA) |
@@ -282,28 +282,29 @@ The most powerful interface. Officers interact with the case database using **na
 
 ---
 
-## 💻 Frontend — React + Bun
+## 💻 Frontend — React + Bun + Vite
 
-The frontend is a modern **React SPA** built and served using **Bun** for maximum speed.
+The frontend is a modern **React SPA** built with **Vite** and served using **Bun** for maximum speed.
 
 **Key characteristics:**
 
-- **Bun** as package manager, dev server, bundler, and runtime — significantly faster than Node + npm/webpack.
+- **Bun** as package manager and runtime (`bun.lock`, `bunfig.toml`).
+- **Vite** as the build tool (`vite.config.ts`).
 - **TypeScript** for type-safe API contracts with the FastAPI backend.
+- **TanStack Router** for routing (`router.tsx`, `routeTree.gen.ts`).
 - **Component-driven architecture** — modular pages for Upload, Search, Chat, Dashboard.
-- **Fetch-based API layer** — clean REST/JSON communication with FastAPI.
 - **Dark police-themed UI** — optimized for low-light station environments.
 
-**Main modules:**
+**Main modules (inside `frontend/src/`):**
 
 | Module | Purpose |
 |--------|---------|
-| `Upload.jsx` | File upload + OCR + summarize trigger |
-| `SearchByNumber.jsx` | FIR number lookup |
-| `SearchByName.jsx` | Complainant / accused search |
-| `AllFIRs.jsx` | Full case register |
-| `ChatAssistant.jsx` | Natural language query interface |
-| `Dashboard.jsx` | Investigation overview |
+| `routes/` | Page components (Upload, Search, Chat, Dashboard) |
+| `components/` | Reusable UI components |
+| `hooks/` | Custom React hooks for API calls and state |
+| `lib/` | Utility functions and API client |
+| `server.ts` | Frontend server configuration |
+| `start.ts` | App entry point |
 
 **Run the frontend:**
 
@@ -319,18 +320,26 @@ bun run dev
 
 The backend exposes a clean REST API consumed by the React frontend.
 
-**Core modules:**
+**Core modules (inside `backend/app/`):**
 
 ```
 backend/
-├── main.py               # FastAPI app entrypoint
-├── search.py             # Advanced search + filters
-├── nlp_parser.py         # parse_natural_query() — regex + date NLP
-├── summarizer.py         # Qwen inference wrapper
-├── translator.py         # 12-language translation
-├── database.py           # SQLite CRUD (init_db, save_fir_record)
-├── ocr.py                # Tesseract OCR wrapper
-└── fir_metadata.db       # Local SQLite database
+├── app/
+│   ├── services/
+│   │   ├── ocr.py            # Tesseract OCR wrapper
+│   │   ├── search.py         # Advanced search + filters
+│   │   ├── summarizer.py     # Qwen inference wrapper
+│   │   └── translator.py     # 12-language translation
+│   ├── utils/                # Helper functions
+│   ├── main.py               # FastAPI app entrypoint
+│   └── models.py             # Pydantic/database models
+├── fir_metadata.db           # Local SQLite database
+├── download_langs.py         # Tesseract language pack downloader
+├── test_ocr.py               # OCR testing utility
+├── view_db.py                # Database viewer utility
+├── requirements.txt
+├── Dockerfile
+└── .env
 ```
 
 **Key functions:**
@@ -346,8 +355,10 @@ backend/
 
 ```bash
 cd backend
+python -m venv venv
+source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
 
 ---
@@ -547,7 +558,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
 
 ### 3. Frontend Setup
@@ -564,7 +575,7 @@ Download the fine-tuned Qwen model (or place your locally merged model + LoRA ad
 
 ### 5. Open the App
 
-Navigate to the URL printed by Bun (typically `http://localhost:5173`).
+Navigate to the URL printed by Vite (typically `http://localhost:5173`).
 
 ---
 
@@ -572,30 +583,40 @@ Navigate to the URL printed by Bun (typically `http://localhost:5173`).
 
 ```
 FIR-SAHAYAK/
-├── frontend/                    # React + Bun SPA
+├── frontend/                    # React + Vite + Bun SPA
 │   ├── public/                  # Static assets + screenshots
 │   │   ├── fir-rc-1.png ... fir-rc-19.png
 │   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── api/
-│   │   └── App.tsx
+│   │   ├── components/          # Reusable UI components
+│   │   ├── hooks/               # Custom React hooks
+│   │   ├── lib/                 # Utilities and API client
+│   │   ├── routes/              # Page components (TanStack Router)
+│   │   ├── router.tsx
+│   │   ├── routeTree.gen.ts
+│   │   ├── server.ts
+│   │   ├── start.ts
+│   │   └── styles.css
 │   ├── package.json
-│   └── bun.lockb
+│   ├── bun.lock
+│   ├── vite.config.ts
+│   └── tsconfig.json
 ├── backend/                     # FastAPI + Qwen inference
-│   ├── main.py
-│   ├── search.py
-│   ├── nlp_parser.py
-│   ├── summarizer.py
-│   ├── translator.py
-│   ├── database.py
-│   ├── ocr.py
+│   ├── app/
+│   │   ├── services/
+│   │   │   ├── ocr.py
+│   │   │   ├── search.py
+│   │   │   ├── summarizer.py
+│   │   │   └── translator.py
+│   │   ├── utils/
+│   │   ├── main.py
+│   │   └── models.py
+│   ├── models/                  # Fine-tuned Qwen + LoRA adapter
+│   ├── tesseract_ocr/           # Local Tesseract binaries
+│   ├── poppler/                 # Local Poppler binaries
 │   ├── fir_metadata.db
-│   └── requirements.txt
-├── models/                      # Fine-tuned Qwen + LoRA adapter
-├── notebooks/                   # Fine-tuning notebooks (AIKosh)
-│   └── qwen_fir_finetune.ipynb
-├── docs/                        # Architecture diagrams
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── .env
 ├── LICENSE
 └── README.md
 ```
@@ -615,7 +636,7 @@ FIR-SAHAYAK/
 - Model fine-tuning was performed on the **AIKosh** platform using its GPU infrastructure.
 - Base model: **Qwen2.5-1.5B-Instruct** by Alibaba Cloud.
 - OCR powered by **Tesseract**.
-- Frontend built with **React** and **Bun**.
+- Frontend built with **React**, **Vite**, and **Bun**.
 
 ---
 

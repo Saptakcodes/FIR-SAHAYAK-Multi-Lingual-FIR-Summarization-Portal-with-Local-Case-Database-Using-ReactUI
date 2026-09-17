@@ -509,7 +509,7 @@ All fine-tuning was performed on **AIKosh** — India's national AI compute plat
         └────────┬─────────┘
                  ↓
         ┌──────────────────┐
-        │  Tesseract OCR   │  ← English / Hindi / Bengali
+        │  Tesseract OCR   │  ← English / 12 Indian Languages
         │  (text extract)  │
         └────────┬─────────┘
                  ↓

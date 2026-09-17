@@ -91,7 +91,7 @@ Existing digital tools are either **cloud-dependent** (violating data sovereignt
 | 4 | Provide a modern, responsive React + Bun frontend | ✅ |
 | 5 | Enable natural language search with robust date parsing | ✅ |
 | 6 | Store all data locally — zero third-party API dependency | ✅ |
-| 7 | Deploy as a Docker-ready, air-gapped compatible system | ✅ |
+| 7 | Deploy as a Docker-ready in future, air-gapped compatible system | ✅ |
 
 ---
 

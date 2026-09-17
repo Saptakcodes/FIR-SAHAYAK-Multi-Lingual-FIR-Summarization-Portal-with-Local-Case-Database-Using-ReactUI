@@ -1,0 +1,51 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Model files (large – 1.9 GB)
+models/qwen-fir-summarizer-final/
+models/*.safetensors
+models/*.bin
+models/*.pt
+
+# Binary dependencies
+poppler/
+tessaract_ocr/
+
+# Temporary & upload directories
+tmp/
+uploads/
+*.tmp
+
+# Database (contains local data)
+*.db
+fir_metadata.db
+
+# Environment variables (contains secrets)
+.env
+
+# Sample files
+FIR18.pdf
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Docker (if you want to exclude)
+Dockerfile
+.dockerignore
+
+.env 

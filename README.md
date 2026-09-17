@@ -188,6 +188,9 @@ The core AI pipeline. An officer uploads a scanned FIR document (PDF/PNG/JPG); t
 ![Upload 1](frontend/public/fir-rc-6.png)
 ![Upload 2](frontend/public/fir-rc-7.png)
 ![Upload 3](frontend/public/fir-rc-8.png)
+![Upload 4](frontend/public/fir-rc-20.png)
+![Upload 5](frontend/public/fir-rc-21.png)
+![Upload 6](frontend/public/fir-rc-22.png)
 
 **Step-by-step pipeline:**
 
@@ -625,7 +628,7 @@ FIR-SAHAYAK/
 
 ## 👥 Contributors
 
-- **Saptak Chaki** — [@Saptakcodes](https://github.com/Saptakcodes)
+- **Saptak Chaki**
 - **Debdutta Ghosh**
 
 ---

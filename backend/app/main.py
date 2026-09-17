@@ -26,7 +26,12 @@ app = FastAPI(title="FIR Summarizer API", version="1.0.0")
 # Enable CORS for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:8501","http://localhost:8081"],  # add React ports
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8501",
+        "http://localhost:8081",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +39,7 @@ app.add_middleware(
 
 summarizer = None
 DB_PATH = Path("fir_metadata.db")
+
 
 def extract_narrative(ocr_text):
     patterns = [
@@ -52,6 +58,7 @@ def extract_narrative(ocr_text):
             return match.group(1).strip()
     return ocr_text[:1500]
 
+
 @app.on_event("startup")
 async def load_model():
     global summarizer
@@ -61,9 +68,11 @@ async def load_model():
     logger.info("✅ Summarizer loaded successfully.")
     init_db()
 
+
 @app.get("/")
 async def root():
     return {"message": "FIR Summarizer API is running"}
+
 
 @app.get("/health")
 async def health():
@@ -74,37 +83,51 @@ async def health():
         c.execute("SELECT COUNT(*) FROM firs")
         count = c.fetchone()[0]
         conn.close()
-    except:
+    except Exception:
         count = 0
     return {
         "status": "ok" if summarizer is not None else "loading",
         "model_loaded": summarizer is not None,
-        "records": count
+        "records": count,
     }
+
 
 @app.post("/summarize")
 async def summarize_fir(
     file: UploadFile = File(...),
-    translate_to: str = Form("none")
+    translate_to: str = Form("none"),
 ):
     if summarizer is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
+
     temp_path = f"./tmp/{file.filename}"
     os.makedirs("./tmp", exist_ok=True)
+
     async with aiofiles.open(temp_path, "wb") as f:
         content = await file.read()
         await f.write(content)
+
+    # Always define `metadata` up-front so it can never raise UnboundLocalError later
+    metadata: dict = {}
+
     try:
+        # ── 1. OCR ─────────────────────────────────────────────
         logger.info(f"Extracting text from {file.filename}...")
         ocr_text = extract_text(temp_path)
         if not ocr_text or len(ocr_text) < 10:
             raise HTTPException(status_code=400, detail="Could not extract text from file")
+
+        # ── 2. Narrative extraction ────────────────────────────
         narrative = extract_narrative(ocr_text)
         if not narrative or len(narrative) < 10:
             narrative = ocr_text[:1500]
             logger.warning("Narrative extraction failed – using raw OCR text.")
+
+        # ── 3. Summarization ───────────────────────────────────
         logger.info("Generating summary...")
         summary = summarizer.generate(narrative)
+
+        # ── 4. Optional translation ────────────────────────────
         translated_summary = None
         lang_map = {
             "bn": "bn", "ben": "bn",
@@ -117,23 +140,35 @@ async def summarize_fir(
             "kn": "kn",
             "ml": "ml",
             "pa": "pa",
-            "ur": "ur",   
-            "sa": "sa", 
+            "ur": "ur",
+            "sa": "sa",
         }
+
         if translate_to in lang_map:
             target_lang = lang_map[translate_to]
             logger.info(f"Translating summary to {target_lang}...")
             try:
                 translated_summary = translate_text(summary, target=target_lang)
                 if translated_summary:
-                    logger.info(f"Translation result (first 100 chars): {translated_summary[:100]}...")
+                    logger.info(
+                        f"Translation result (first 100 chars): "
+                        f"{translated_summary[:100]}..."
+                    )
                 else:
                     logger.warning("Translation returned None")
             except Exception as e:
                 logger.error(f"Translation error: {e}")
                 translated_summary = None
+
+        # ── 5. Metadata extraction (isolated) ──────────────────
         try:
             metadata = extract_metadata(ocr_text)
+        except Exception as e:
+            logger.error(f"Metadata extraction failed: {e}")
+            metadata = {}
+
+        # ── 6. DB save (isolated) ──────────────────────────────
+        try:
             save_fir_record(
                 fir_number=metadata.get("FIR Number", "Not available"),
                 police_station=metadata.get("Police Station", "Not available"),
@@ -150,11 +185,13 @@ async def summarize_fir(
                 property=metadata.get("Property", "Not available"),
                 total_value=metadata.get("Total Value (Rs)", "Not available"),
                 summary=summary,
-                ocr_text=ocr_text
+                ocr_text=ocr_text,
             )
             logger.info("✅ FIR record saved to database.")
         except Exception as e:
             logger.error(f"Failed to save to DB: {e}")
+
+        # ── 7. Response ────────────────────────────────────────
         return {
             "original_text": ocr_text,
             "narrative": narrative,
@@ -162,36 +199,49 @@ async def summarize_fir(
             "translated_summary": translated_summary,
             "target_language": translate_to if translate_to != "none" else None,
             "metadata": metadata,
-            "translation_status": "ok" if translated_summary else ("skipped" if translate_to == "none" else "failed"),
+            "translation_status": (
+                "ok" if translated_summary
+                else ("skipped" if translate_to == "none" else "failed")
+            ),
             "translation_note": None,
         }
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cleanup_temp(temp_path)
 
+
 @app.get("/fir/{fir_number}")
 async def get_fir_by_number(fir_number: str):
     results = search_by_fir_number(fir_number)
     if not results:
         raise HTTPException(status_code=404, detail="FIR not found")
-    columns = ["id", "fir_number", "police_station", "district", "fir_date", "fir_time",
-               "incident_date", "incident_time", "legal_sections", "complainant",
-               "complainant_father", "address", "accused", "property", "total_value",
-               "summary", "ocr_text", "created_at"]
+    columns = [
+        "id", "fir_number", "police_station", "district", "fir_date", "fir_time",
+        "incident_date", "incident_time", "legal_sections", "complainant",
+        "complainant_father", "address", "accused", "property", "total_value",
+        "summary", "ocr_text", "created_at",
+    ]
     firs = [dict(zip(columns, row)) for row in results]
     return {"firs": firs}
+
 
 @app.post("/search")
 async def search_firs(name: str):
     results = search_by_name(name)
-    columns = ["id", "fir_number", "police_station", "district", "fir_date", "fir_time",
-               "incident_date", "incident_time", "legal_sections", "complainant",
-               "complainant_father", "address", "accused", "property", "total_value",
-               "summary", "ocr_text", "created_at"]
+    columns = [
+        "id", "fir_number", "police_station", "district", "fir_date", "fir_time",
+        "incident_date", "incident_time", "legal_sections", "complainant",
+        "complainant_father", "address", "accused", "property", "total_value",
+        "summary", "ocr_text", "created_at",
+    ]
     firs = [dict(zip(columns, row)) for row in results]
     return {"results": firs}
+
 
 @app.post("/filter")
 async def advanced_filter(filters: FilterRequest):
@@ -199,6 +249,7 @@ async def advanced_filter(filters: FilterRequest):
     logger.info(f"Received filters: {filters_dict}")
     results = filter_firs(filters_dict)
     return {"results": results}
+
 
 # --- NEW ENDPOINTS FOR REACT FRONTEND ---
 
@@ -212,12 +263,15 @@ async def get_records(limit: int = 25, offset: int = 0):
     c.execute("SELECT COUNT(*) FROM firs")
     total = c.fetchone()[0]
     conn.close()
-    columns = ["id", "fir_number", "police_station", "district", "fir_date", "fir_time",
-               "incident_date", "incident_time", "legal_sections", "complainant",
-               "complainant_father", "address", "accused", "property", "total_value",
-               "summary", "ocr_text", "created_at"]
+    columns = [
+        "id", "fir_number", "police_station", "district", "fir_date", "fir_time",
+        "incident_date", "incident_time", "legal_sections", "complainant",
+        "complainant_father", "address", "accused", "property", "total_value",
+        "summary", "ocr_text", "created_at",
+    ]
     records = [dict(zip(columns, row)) for row in rows]
     return {"results": records, "count": len(records), "total": total}
+
 
 @app.get("/ask")
 async def ask_assistant(q: str):

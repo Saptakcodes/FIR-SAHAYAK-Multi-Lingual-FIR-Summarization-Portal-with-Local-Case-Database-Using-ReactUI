@@ -224,11 +224,10 @@ def extract_metadata(text: str) -> dict:
         max_chars=60,
     )
 
-    # --- District (FIXED: line-based capture to get the full name) ---
+    # --- District ---
     metadata["District"] = _extract_field(
         text,
         [
-            # Capture everything after "District (...):" up to the end of line
             r'District\s*(?:\([^)]*\))?\s*[:.]?\s*([^\n]{3,80})',
         ],
         max_chars=80,
@@ -260,7 +259,7 @@ def extract_metadata(text: str) -> dict:
         max_chars=15,
     )
 
-    # --- Legal Sections (FIXED: repair OCR digit splitting) ---
+    # --- Legal Sections ---
     sections_raw = ""
     m = re.search(
         r'U/S\s+([\d()/,\s]+?)\s+of\s+BNS',
@@ -278,7 +277,7 @@ def extract_metadata(text: str) -> dict:
             sections_raw = ", ".join(rows)
 
     if sections_raw:
-        # FIX: repair OCR artifact "35 1(2)" -> "351(2)"
+        # Repair OCR artifacts like "35 1(2)" -> "351(2)"
         sections_raw = re.sub(r'(\d)\s+(\d)', r'\1\2', sections_raw)
         sections_raw = re.sub(r'(\d)\s+\(', r'\1(', sections_raw)
 
@@ -289,7 +288,7 @@ def extract_metadata(text: str) -> dict:
     else:
         metadata["Legal Sections"] = "Not explicitly stated"
 
-    # --- Complainant Name (FIXED: no more "S" stripping bug) ---
+    # --- Complainant Name ---
     complainant = "Not explicitly stated"
 
     # Priority 1: structured "(a) Name (नाम):" under "Complainant / Informant"
@@ -299,23 +298,30 @@ def extract_metadata(text: str) -> dict:
     )
     if m:
         candidate = _strip_ocr_noise(m.group(1))
-        # FIX: previous code used re.IGNORECASE which stripped leading
-        # uppercase letters (e.g. "Sarmistha" -> "armistha").
-        # Only strip "(a)" style prefixes — lowercase letter in parentheses.
         candidate = re.sub(r'^\([a-z]\)\s*', '', candidate)
         candidate = re.sub(r'^[a-z]\)\s*', '', candidate)
         if _looks_like_name(candidate):
             complainant = candidate
 
-    # Priority 2: any "Name (नाम):" NOT preceded by Husband/Father/Wife
+    # Priority 2: any "Name (नाम):" NOT preceded by Husband/Father/Wife/Mother
+    # NOTE: We use a normal match + a Python prefix check instead of a
+    # lookbehind, because Python's re module rejects variable-width
+    # lookbehinds (which caused the "look-behind requires fixed-width
+    # pattern" crash).
     if complainant == "Not explicitly stated":
         for m in re.finditer(
-            r'(?<![Hh]usband\'?s?\s)(?<![Ff]ather\'?s?\s)(?<![Ww]ife\'?s?\s)(?<![Mm]other\'?s?\s)Name\s*\([^)]*\)\s*[:.]?\s*([^\n]{3,80})',
+            r'Name\s*\([^)]*\)\s*[:.]?\s*([^\n]{3,80})',
             text
         ):
+            prefix_window = text[max(0, m.start() - 20):m.start()].lower()
+            if any(kw in prefix_window for kw in
+                   ("husband", "father", "wife", "mother")):
+                continue
+
             candidate = _strip_ocr_noise(m.group(1))
             candidate = re.sub(r'^\([a-z]\)\s*', '', candidate)
             candidate = re.sub(r'^[a-z]\)\s*', '', candidate)
+
             if _looks_like_name(candidate):
                 complainant = candidate
                 break
@@ -331,9 +337,7 @@ def extract_metadata(text: str) -> dict:
 
     metadata["Complainant Name"] = complainant
 
-    # --- Complainant's Father / Husband (FIXED: restrict to Section 6) ---
-    # Without this restriction, the regex was picking up the *accused's*
-    # father from Section 7 (e.g. "Lt. Gopal" instead of "Siv Narayan").
+    # --- Complainant's Father / Husband (restricted to Section 6) ---
     section_6_match = re.search(
         r'6\.\s*Complainant\s*/\s*Informant.*?(?=\n\s*7\.\s*Details)',
         text, re.IGNORECASE | re.DOTALL
@@ -342,7 +346,6 @@ def extract_metadata(text: str) -> dict:
 
     father_value = "Not explicitly stated"
 
-    # Try Husband's Name first (most common for married female complainants)
     husband = _extract_field(
         father_search_text,
         [
@@ -355,7 +358,6 @@ def extract_metadata(text: str) -> dict:
     if husband != "Not explicitly stated":
         father_value = f"{husband} (Husband)"
     else:
-        # Fall back to Father's Name (for unmarried / male complainants)
         father = _extract_field(
             father_search_text,
             [
@@ -370,11 +372,9 @@ def extract_metadata(text: str) -> dict:
 
     metadata["Complainant Father"] = father_value
 
-    # --- Address (FIXED: reads from table row "Present Address38, ...") ---
+    # --- Address ---
     address = "Not explicitly stated"
 
-    # Pattern 1: "Present Address" directly followed by digit-house-number
-    # (OCR usually outputs "Present Address38, Nilkhanta..." with no space)
     m = re.search(
         r'Present\s+Address\s*[:.]?\s*(\d+[^\n]{5,200})',
         text, re.IGNORECASE
@@ -385,7 +385,6 @@ def extract_metadata(text: str) -> dict:
             text, re.IGNORECASE
         )
     if not m:
-        # Pattern 3: Section 5(b) "Address (पता): 38, ..."
         m = re.search(
             r'\(b\)\s*Address\s*(?:\([^)]*\))?\s*[:.]?\s*(\d+[^\n]{5,200})',
             text, re.IGNORECASE
@@ -393,7 +392,6 @@ def extract_metadata(text: str) -> dict:
 
     if m:
         candidate = m.group(1)
-        # Cut off the next table row that starts with "2Permanent Address..."
         candidate = re.split(r'\d\s*(?:Present|Permanent)\s+Address', candidate)[0]
         candidate = _strip_ocr_noise(candidate)
         if len(candidate) > 5:
@@ -401,7 +399,7 @@ def extract_metadata(text: str) -> dict:
 
     metadata["Address"] = address
 
-    # --- Accused (table-aware, unchanged) ---
+    # --- Accused (table-aware) ---
     accused_names: list[str] = []
 
     section = re.search(
